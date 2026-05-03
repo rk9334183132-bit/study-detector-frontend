@@ -25,7 +25,7 @@ app.use(passport.session());
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: "/auth/google/callback"
+    callbackURL: "https://study-backend-7rox.onrender.com/auth/google/callback"
   },
   function(accessToken, refreshToken, profile, done) {
     const user = {
