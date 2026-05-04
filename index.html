@@ -20,15 +20,15 @@
 <body>
   
   <!-- Auth Container -->
-  <div class="auth-container" id="auth-container" style="display: none; height: 100vh; flex-direction: column; align-items: center; justify-content: center; background: var(--bg-main);">
-    <div class="glass-card" style="width: 100%; max-width: 400px; padding: 2.5rem;">
+  <div class="auth-container" id="auth-container" style="display: none; min-height: 100vh; width: 100%; flex-direction: column; align-items: center; justify-content: center; background: var(--bg-gradient); padding: 1rem; position: relative; z-index: 10;">
+    <div class="glass-card" style="width: 100%; max-width: 400px; padding: 2rem; margin: auto;">
       <div class="text-center mb-4" style="text-align: center;">
         <span class="material-symbols-outlined text-primary" style="font-size: 3rem;">school</span>
         <h2>StudyTrack</h2>
       </div>
 
       <div style="margin-bottom: 2rem;">
-        <a href="/auth/google" class="btn btn-outline" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem; text-decoration: none; color: var(--text-color); border: 1px solid var(--border-color); padding: 0.75rem; border-radius: 8px; font-weight: 500; background: transparent; transition: background 0.2s;">
+        <a href="/auth/google" class="btn btn-outline" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem; text-decoration: none; color: var(--text-main); border: 1px solid var(--border-color); padding: 0.75rem; border-radius: 8px; font-weight: 500; background: transparent; transition: background 0.2s; position: relative; z-index: 20;">
           <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" alt="Google" style="width: 18px; height: 18px;">
           Sign in with Google
         </a>
@@ -110,8 +110,11 @@
       
       <!-- Top Bar -->
       <header class="top-bar glass-card" style="border-radius: 0; border-top: none; border-left: none; border-right: none; padding: 1rem 2.5rem; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
-        <div class="greeting-container">
-          <h2 id="greeting-text" style="font-size: 1.25rem; font-weight: 600;">Hello 👋</h2>
+        <div class="flex-align-center gap-2">
+          <button id="sidebar-toggle" class="btn-icon" style="display: none; margin-right: 0.5rem; position: relative; z-index: 2000;"><span id="sidebar-toggle-icon" class="material-symbols-outlined">menu</span></button>
+          <div class="greeting-container">
+            <h2 id="greeting-text" style="font-size: 1.25rem; font-weight: 600;">Hello 👋</h2>
+          </div>
         </div>
         
         <div class="top-bar-right flex-align-center gap-3">
