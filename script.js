@@ -2,6 +2,13 @@
  * Study Tracker Web App - Core Logic
  */
 
+function getLocalISODate(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 // --- STATE MANAGEMENT ---
 const defaultState = {
   tasks: [],
@@ -13,16 +20,27 @@ let chartInstance = null;
 let uiInterval = null;
 let currentUser = JSON.parse(localStorage.getItem('studyTrackerCurrentUser')) || null;
 
-function loadUserState() {
+async function loadUserState() {
   state = defaultState;
   if (!currentUser) return;
   try {
-    const stored = localStorage.getItem(`studyTrackerState_${currentUser.email}`);
-    if (stored) {
-      state = JSON.parse(stored);
+    const res = await fetch('/api/state');
+    if (res.ok) {
+      const backendState = await res.json();
+      if (backendState && backendState.tasks) {
+        state = backendState;
+      } else {
+        const stored = localStorage.getItem(`studyTrackerState_${currentUser.email}`);
+        if (stored) state = JSON.parse(stored);
+      }
+    } else {
+      const stored = localStorage.getItem(`studyTrackerState_${currentUser.email}`);
+      if (stored) state = JSON.parse(stored);
     }
   } catch (e) {
     console.error("Failed to load state", e);
+    const stored = localStorage.getItem(`studyTrackerState_${currentUser.email}`);
+    if (stored) state = JSON.parse(stored);
   }
 
   // Data migration for old tasks to ensure fields match new requirements
@@ -35,7 +53,7 @@ function loadUserState() {
       isRunning: t.isRunning || false,
       startTime: t.startTime || null,
       createdDate: t.createdDate || t.dateCreated || t.date || new Date().toISOString(),
-      targetDate: t.targetDate || (t.createdDate ? t.createdDate.split('T')[0] : new Date().toISOString().split('T')[0]),
+      targetDate: t.targetDate || (t.createdDate ? t.createdDate.split('T')[0] : getLocalISODate(new Date())),
       dailyRecords: t.dailyRecords || {},
       sessions: t.sessions || [],
       currentSessionStart: t.currentSessionStart || null
@@ -152,12 +170,24 @@ function initSidebar() {
   const icon = document.getElementById('sidebar-toggle-icon');
   
   if (sidebarToggle && sidebar) {
-    sidebarToggle.addEventListener('click', () => {
-      sidebar.classList.toggle('collapsed');
-      if (sidebar.classList.contains('collapsed')) {
-        icon.textContent = 'menu';
+    sidebarToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (window.innerWidth <= 768) {
+        sidebar.classList.toggle('mobile-open');
+        icon.textContent = sidebar.classList.contains('mobile-open') ? 'close' : 'menu';
       } else {
-        icon.textContent = 'menu_open';
+        sidebar.classList.toggle('collapsed');
+        icon.textContent = sidebar.classList.contains('collapsed') ? 'menu' : 'menu_open';
+      }
+    });
+    
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+      if (window.innerWidth <= 768 && sidebar.classList.contains('mobile-open')) {
+        if (!sidebar.contains(e.target) && !sidebarToggle.contains(e.target)) {
+          sidebar.classList.remove('mobile-open');
+          icon.textContent = 'menu';
+        }
       }
     });
   }
@@ -190,9 +220,34 @@ function handleTaskAction(e) {
   else if (btn.closest('[title="Delete"]')) deleteTask(taskId);
 }
 
-function saveState() {
+async function saveState() {
   if (currentUser) {
     localStorage.setItem(`studyTrackerState_${currentUser.email}`, JSON.stringify(state));
+    try {
+      await fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state)
+      });
+      
+      // Save daily summary to the new backend DB
+      const todayStr = getLocalISODate(new Date());
+      let ms = 0;
+      let completed = 0;
+      state.tasks.forEach(t => {
+         if (t.dailyRecords && t.dailyRecords[todayStr]) ms += t.dailyRecords[todayStr];
+         if (t.completed && getLocalISODate(new Date(t.createdDate)) === todayStr) completed++;
+      });
+      const studyHours = parseFloat((ms / (1000 * 60 * 60)).toFixed(2));
+      
+      await fetch('/api/study-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: todayStr, studyHours, tasksCompleted: completed })
+      });
+    } catch (e) {
+      console.error("Failed to save state to backend", e);
+    }
   }
 }
 
@@ -331,12 +386,14 @@ function createTaskElement(task) {
   }
 
   let badgeHtml = '';
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalISODate(new Date());
   const isFuture = task.targetDate && task.targetDate > todayStr;
   
   if (task.targetDate) {
+    const [ty, tm, td] = task.targetDate.split('-');
+    const localTarget = new Date(ty, tm - 1, td);
     if (isFuture) {
-      badgeHtml = `<span class="badge" style="background: var(--primary-light); color: var(--primary); margin-left: 0.5rem;"><span class="material-symbols-outlined" style="font-size:12px; vertical-align:text-bottom;">event</span> ${new Date(task.targetDate).toLocaleDateString([], {month:'short', day:'numeric'})}</span>`;
+      badgeHtml = `<span class="badge" style="background: var(--primary-light); color: var(--primary); margin-left: 0.5rem;"><span class="material-symbols-outlined" style="font-size:12px; vertical-align:text-bottom;">event</span> ${localTarget.toLocaleDateString([], {month:'short', day:'numeric'})}</span>`;
     } else if (task.targetDate < todayStr && !task.completed) {
       badgeHtml = `<span class="badge" style="background: rgba(239, 68, 68, 0.1); color: var(--danger); margin-left: 0.5rem;"><span class="material-symbols-outlined" style="font-size:12px; vertical-align:text-bottom;">warning</span> Overdue</span>`;
     }
@@ -408,7 +465,7 @@ function handleAddTask(e) {
   const dateInput = document.getElementById('new-task-date');
   
   const title = input.value.trim();
-  const pickedDate = dateInput && dateInput.value ? dateInput.value : new Date().toISOString().split('T')[0];
+  const pickedDate = dateInput && dateInput.value ? dateInput.value : getLocalISODate(new Date());
   
   if (title) {
     const newTask = {
@@ -459,7 +516,7 @@ function deleteTask(id) {
 function startTimer(id) {
   const task = state.tasks.find(t => t.id === id);
   if (task && !task.isRunning) {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalISODate(new Date());
     if (task.targetDate && task.targetDate > todayStr) {
       showToast("Cannot start a timer for a future task.");
       return;
@@ -502,7 +559,7 @@ function pauseTimer(id, triggerRender=true) {
     }
 
     // Add to daily records for chart/calendar functionality
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalISODate(new Date());
     task.dailyRecords[today] = (task.dailyRecords[today] || 0) + sessionTime;
     
     task.isRunning = false;
@@ -525,7 +582,7 @@ function endTimer(id, triggerRender=true) {
 
 // --- DASHBOARD HELPERS ---
 function getTodayTotalMs() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalISODate(new Date());
   let totalMs = 0;
   
   state.tasks.forEach(task => {
@@ -582,7 +639,7 @@ function updateDashboardStatsOnly() {
   todayDate.setHours(0,0,0,0);
   const yesterday = new Date(todayDate);
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  const yesterdayStr = getLocalISODate(yesterday);
   const yesterdayMs = totals[yesterdayStr] || 0;
   
   const trendEl = document.getElementById('dash-trend');
@@ -661,7 +718,7 @@ function getDailyTotals() {
     
     // Include live active sessions
     if (task.isRunning && task.startTime) {
-       const today = new Date().toISOString().split('T')[0];
+       const today = getLocalISODate(new Date());
        const currentSessionMs = Date.now() - task.startTime;
        totals[today] = (totals[today] || 0) + currentSessionMs;
     }
@@ -697,12 +754,12 @@ function calculateStreak() {
   todayObjDate.setHours(0,0,0,0);
   
   let checkDate = new Date(todayObjDate);
-  const todayStr = checkDate.toISOString().split('T')[0];
+  const todayStr = getLocalISODate(checkDate);
   
   if (!totals[todayStr]) checkDate.setDate(checkDate.getDate() - 1);
   
   while (true) {
-    const ds = checkDate.toISOString().split('T')[0];
+    const ds = getLocalISODate(checkDate);
     if (totals[ds] && totals[ds] > 0) {
       streak++;
       checkDate.setDate(checkDate.getDate() - 1);
@@ -726,7 +783,7 @@ function initAnalytics() {
   for(let i=6; i>=0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = getLocalISODate(d);
     labels.push(d.toLocaleDateString([], { weekday: 'short' }));
     const ms = totals[dateStr] || 0;
     data.push(Math.round(ms / (1000 * 60)));
@@ -786,7 +843,7 @@ function renderCalendar() {
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const totals = getDailyTotals();
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalISODate(new Date());
   
   for (let i = 0; i < firstDay; i++) {
     const blank = document.createElement('div');
@@ -796,7 +853,7 @@ function renderCalendar() {
   
   for (let i = 1; i <= daysInMonth; i++) {
     const dayDate = new Date(year, month, i);
-    const dateStr = dayDate.toISOString().split('T')[0];
+    const dateStr = getLocalISODate(dayDate);
     const ms = totals[dateStr] || 0;
     const scheduledTasks = state.tasks.filter(t => t.targetDate === dateStr && !t.completed);
     
@@ -840,10 +897,11 @@ function renderCalendar() {
   showCalendarDetails(todayStr, totals[todayStr] || 0);
 }
 
-function showCalendarDetails(dateStr, totalMs) {
+async function showCalendarDetails(dateStr, totalMs) {
   const detailsEl = document.getElementById('calendar-details');
   if (!detailsEl) return;
-  const displayDate = new Date(dateStr).toLocaleDateString(...[,{ weekday: 'long', month: 'long', day: 'numeric'}]);
+  const [y, m, d] = dateStr.split('-');
+  const displayDate = new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric'});
   
   const hrs = Math.floor(totalMs / (1000 * 60 * 60));
   const mins = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60));
@@ -852,7 +910,7 @@ function showCalendarDetails(dateStr, totalMs) {
   state.tasks.forEach(t => {
     if (t.dailyRecords && t.dailyRecords[dateStr]) {
       tasksStudied.push(`<li>${escapeHTML(t.name)} - ${formatTime(t.dailyRecords[dateStr])}</li>`);
-    } else if (dateStr === new Date().toISOString().split('T')[0] && t.isRunning) {
+    } else if (dateStr === getLocalISODate(new Date()) && t.isRunning) {
        const sessionTime = Date.now() - t.startTime;
        if(sessionTime > 0) tasksStudied.push(`<li>${escapeHTML(t.name)} - ${formatTime(sessionTime)} (Active)</li>`);
     } else if (t.targetDate === dateStr && !t.completed && (!t.dailyRecords || !t.dailyRecords[dateStr])) {
@@ -860,14 +918,31 @@ function showCalendarDetails(dateStr, totalMs) {
     }
   });
   
+  let backendDbHtml = '';
+  try {
+    const res = await fetch(`/api/study-data?date=${dateStr}`);
+    if (res.ok) {
+      const dbData = await res.json();
+      if (dbData && dbData.studyHours !== undefined) {
+         backendDbHtml = `
+           <div class="card mt-3" style="background: var(--primary-light); border: 1px solid var(--primary); padding: 1rem; border-radius: 8px;">
+             <h4 class="text-sm" style="color: var(--primary); margin-bottom: 0.5rem;"><span class="material-symbols-outlined text-sm" style="vertical-align: middle;">database</span> Database Record</h4>
+             <div class="flex-between text-sm"><span>Study Hours:</span> <strong>${dbData.studyHours}h</strong></div>
+             <div class="flex-between text-sm mt-1"><span>Tasks Completed:</span> <strong>${dbData.tasksCompleted}</strong></div>
+           </div>`;
+      }
+    }
+  } catch (e) { console.error("DB Fetch Error", e); }
+  
   detailsEl.innerHTML = `
     <h3 class="mb-2">${displayDate}</h3>
     <div class="card bg-light-primary mb-3 text-center border-0">
       <h2 class="text-primary">${hrs}h ${mins}m</h2>
       <p class="text-sm text-muted">Total time studied</p>
     </div>
+    ${backendDbHtml}
     
-    <h4>Tasks Worked On:</h4>
+    <h4 class="mt-4">Tasks Worked On:</h4>
     ${tasksStudied.length > 0 ? 
       `<ul class="mt-2 text-sm text-muted custom-list" style="padding-left: 1rem; line-height: 1.8;">${tasksStudied.join('')}</ul>` 
       : '<p class="text-sm text-muted mt-2">No study data yet.</p>'}
@@ -1047,7 +1122,7 @@ async function initAuth() {
   if (currentUser) {
     if (authContainer) authContainer.style.display = 'none';
     if (appContainer) appContainer.style.display = 'flex';
-    loadUserState();
+    await loadUserState();
     initApp();
   } else {
     if (authContainer) authContainer.style.display = 'flex';
