@@ -450,10 +450,12 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.02em; }
 /* Responsive */
 @media (max-width: 768px) {
   .app-container { flex-direction: column; }
-  .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border-color); padding: 1rem; flex-direction: row; justify-content: space-between; align-items: center; }
-  .sidebar-header { margin-bottom: 0; padding: 0; }
-  .nav-links { display: none; } /* Hide on mobile by default, could use hamburger menu */
-  .sidebar-footer { display: none; }
+  .sidebar { position: fixed; top: 0; left: -260px; width: 250px; height: 100vh; border-right: 1px solid var(--border-color); border-bottom: none; flex-direction: column; justify-content: flex-start; align-items: stretch; z-index: 1000; transition: left 0.3s ease; padding: 1.5rem 1rem; }
+  .sidebar.mobile-open { left: 0; }
+  #sidebar-toggle { display: flex !important; }
+  .nav-links { display: flex; }
+  .sidebar-footer { display: flex; }
+  .sidebar-header { margin-bottom: 2.5rem; padding: 0 0.5rem; }
   .main-content { padding: 1.5rem; }
   .calendar-layout { grid-template-columns: 1fr; }
   .task-item { flex-direction: column; align-items: flex-start; gap: 1rem; }
